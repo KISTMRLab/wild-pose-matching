@@ -1,0 +1,17 @@
+title: "Wild Pose Matching"
+description: "Contrastive matching turns noisy video poses into a richer gesture rule map."
+markdown: kramdown
+kramdown:
+  input: GFM
+exclude:
+  - src
+  - tests
+  - .venv
+  - data
+  - runs
+  - outputs
+  - checkpoints
+  - pyproject.toml
+  - requirements.txt
+  - package.json
+  - package-lock.json
