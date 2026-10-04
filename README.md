@@ -58,6 +58,14 @@ Please cite the research paper when using its ideas; [download the BibTeX citati
 
 Clean-room educational implementation of *Improving Co-speech gesture rule-map generation via wild pose matching with gesture units* (Ali and Hwang, SIGGRAPH Asia Posters 2022, DOI: [10.1145/3550082.3564185](https://doi.org/10.1145/3550082.3564185)). It implements the poster's learned noisy-2D/clean-3D matching, balanced gesture clustering, rule mining, and six-gram retrieval. It is independent of the institute implementation.
 
+For an immediate browser example after installation, run `python scripts/prepare_viewer.py --out static/vendor` and `python scripts/demo_server.py --example`, then open the printed URL. Author-created motion and transparent illustrative pose/text vectors exercise the actual cluster and retrieval functions. The UI labels them as examples; no GestureCLR model is claimed to have been trained. The prepared-data commands below use an actual trained checkpoint.
+
+```bash
+python -m pip install -e .
+python scripts/prepare_viewer.py --out static/vendor
+python scripts/demo_server.py --example
+```
+
 ### Install and data
 
 ```bash
@@ -71,12 +79,29 @@ On Windows PowerShell, activate with `.\.venv\Scripts\Activate.ps1` instead of t
 Verify the complete local path with generated arrays:
 
 ```bash
-python scripts/smoke.py
+python scripts/verify.py
 ```
 
-The command generates every documented NPZ contract and a local 384-D SentenceTransformer fixture, then invokes the installed `train`, `cluster`, `mine`, and `retrieve` CLI paths into `outputs/smoke/`. The local encoder replaces only the downloadable Sentence-BERT weights. Real runs swap that boundary for `all-MiniLM-L6-v2`; pose/motion shapes, checkpoints, clustering, and retrieval are identical.
+The command generates every documented NPZ contract and a local 384-D SentenceTransformer fixture, then invokes the installed `train`, `cluster`, `mine`, and `retrieve` CLI paths into `outputs/verification/`. The local encoder replaces only the downloadable Sentence-BERT weights. Real runs swap that boundary for `all-MiniLM-L6-v2`; pose/motion shapes, checkpoints, clustering, and retrieval are identical.
 
 Users prepare all data. [Talking With Hands 16.2M](https://github.com/facebookresearch/TalkingWithHands32M) is the public training source cited by the paper; follow its access terms and derive synchronized 2–3 second paired units. For wild records, use videos you may process and produce timestamped text plus 2D pose; the [TED Gesture Dataset](https://github.com/youngwoo-yoon/Co-Speech_Gesture_Generation) is a practical public replacement. No dataset, videos, motion, weights, or claimed 2,035-unit/210k-rule artifact is included.
+
+### Prepare data and launch the motion demo
+
+`scripts/prepare_public_data.py` accepts a licensed BVH and word-aligned JSONL transcript. Supply either one record with `words` or one word per line, using `word`, `start_seconds`, and `end_seconds`. It applies BVH hierarchy rotations, resamples to 15 FPS, centers on the neck, and creates paired 2D/3D units plus a projected `wild.npz` proxy. Use a recording of at least six seconds for two training pairs. The proxy demonstrates the interface; replace `wild.npz` with actual aligned video-estimated 2D poses and text for wild-pose mining. Retarget other BVH skeletons to the joint names in the script.
+
+```bash
+python scripts/prepare_public_data.py --bvh data/licensed_motion.bvh --transcript data/words.jsonl --output-dir data/prepared
+gestureclr train --pairs data/prepared/pairs.npz --epochs 20 --output checkpoints/gestureclr.pt
+gestureclr cluster --units data/prepared/units.npz --checkpoint checkpoints/gestureclr.pt --clusters 10 --output outputs/clusters.npz
+gestureclr mine --wild data/prepared/wild.npz --units data/prepared/units.npz --checkpoint checkpoints/gestureclr.pt --clusters outputs/clusters.npz --output outputs/rules.jsonl
+python scripts/prepare_viewer.py --out static/vendor
+python scripts/demo_server.py --data-dir data/prepared --rules outputs/rules.jsonl --clusters outputs/clusters.npz
+```
+
+Open the printed local URL. Queries use six-word chunks, Sentence-BERT rule similarity and seeded sampling from the learned cluster. The trace shows the chosen cluster, score and actual unit frames. `gestureclr retrieve` remains available for batch results; `scripts/export_playback.py --sequence outputs/sequence.json --motion data/prepared/units.npz --output outputs/playback.json` joins those IDs to frames. The checkpoint is fitted only to the supplied pairs; a few demo epochs or projected proxy data do not establish useful wild-video accuracy. `scripts/verify.py` exercises plumbing with random arrays and a local text-encoder fixture, never a trained public model.
+
+The [automatic rule-mining precursor](https://github.com/ghazanPK/automatic-text-to-gesture) motivates harvesting mappings from video; [multilingual gesture retrieval](https://github.com/ghazanPK/multilingual-gesture) and [RIDGE](https://github.com/ghazanPK/ridge) develop the GestureCLR lineage. These are research references, not package dependencies.
 
 `pairs.npz`: `pose2d[N,F,D2]`, `motion3d[N,F,D3]`. `units.npz`: `motion3d`, string `ids`, and scalar `dim2`. `wild.npz`: `pose2d`, string `texts`. Keep the same upper-body joint order, 15 FPS, root/neck centering, coordinate scale, padding, and masks across files. The compact CLI assumes fixed-length padded batches; remove invalid frames before packaging.
 
@@ -101,3 +126,7 @@ Machine-readable metadata is in [citation.bib](citation.bib).
 ```bibtex
 @inproceedings{ali2022wild, title={Improving Co-speech gesture rule-map generation via wild pose matching with gesture units}, author={Ali, Ghazanfar and Hwang, Jae-In}, booktitle={SIGGRAPH Asia 2022 Posters}, year={2022}, doi={10.1145/3550082.3564185}}
 ```
+
+### Optional local speech adapters
+
+The viewer can speak its query or transcribe user-selected audio. Browser voice and typed text work without model weights. Install `python -m pip install -e ".[speech]"` for local adapters. Obtain Kokoro files from [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) yourself: `config.json`, `kokoro-v1_0.pth` and `voices/af_heart.pt`. Set `KOKORO_MODEL_DIR` to their parent folder before launching the server. Follow [Kokoro's English phonemizer setup](https://github.com/hexgrad/kokoro), including espeak-ng where required, then choose Local Kokoro. For ASR, set `WHISPER_MODEL_DIR` to a user-downloaded [faster-whisper](https://github.com/SYSTRAN/faster-whisper) small model directory containing `model.bin` and its tokenizer/configuration files. ASR runs on CPU with INT8, requests word timestamps and VAD, and disables implicit model downloads. No speech model files or audio recordings are included in this repo.

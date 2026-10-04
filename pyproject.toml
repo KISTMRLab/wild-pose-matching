@@ -11,3 +11,6 @@ gestureclr="wild_pose_matching.cli:main"
 [tool.setuptools.packages.find]
 where=["src"]
 
+
+[project.optional-dependencies]
+speech = ["kokoro>=0.9.4", "soundfile>=0.12", "faster-whisper>=1.1"]

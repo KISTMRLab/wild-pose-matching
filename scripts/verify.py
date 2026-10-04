@@ -40,7 +40,7 @@ def text_embedding(texts: list[str], width: int = 384) -> np.ndarray:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs/smoke"))
+    parser.add_argument("--output-dir", type=Path, default=Path("outputs/verification"))
     args = parser.parse_args()
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
