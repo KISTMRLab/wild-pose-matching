@@ -126,7 +126,9 @@ def main() -> None:
     if len(motion) < length:
         raise ValueError("BVH is shorter than one gesture unit")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    starts = list(range(0, len(motion) - length + 1, length))
+    # Full neck-centred take for `gestureclr extract-units` (Algorithm 3).
+    np.savez(args.output_dir / "motion.npz", motion=motion, take=np.asarray(args.bvh.stem), fps=np.asarray(args.fps), joint_names=np.asarray(JOINTS))
+    starts =list(range(0, len(motion) - length + 1, length))
     clips = np.stack([motion[start:start + length].reshape(length, -1) for start in starts])
     projected = np.stack([motion[start:start + length, :, :2].reshape(length, -1) for start in starts])
     ids = np.asarray([f"unit_{i:04d}" for i in range(len(starts))])

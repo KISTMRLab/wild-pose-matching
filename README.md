@@ -80,7 +80,12 @@ To replace the demo motion with an existing processed BEAT take, run `python scr
 
 <!-- implementation-guide -->
 
-Clean-room educational implementation of *Improving Co-speech gesture rule-map generation via wild pose matching with gesture units* (Ali and Hwang, SIGGRAPH Asia Posters 2022, DOI: [10.1145/3550082.3564185](https://doi.org/10.1145/3550082.3564185)). It implements the poster's learned noisy-2D/clean-3D matching, balanced gesture clustering, rule mining, and six-gram retrieval. It is independent of the institute implementation.
+Clean-room educational implementation of *Improving Co-speech gesture rule-map generation via wild pose matching with gesture units* (Ali and Hwang, SIGGRAPH Asia Posters 2022, DOI: [10.1145/3550082.3564185](https://doi.org/10.1145/3550082.3564185)). It implements:
+- Algorithm 3 gesture-unit extraction (from the thesis);
+- learned noisy-2D/clean-3D matching (GestureCLR) with the paper's augmentation;
+- Bisecting K-Means clustering of unit latents;
+- rule mining;
+- six-gram retrieval. It is independent of the institute implementation.
 
 The default browser path is the prepared BEAT demo above. The older `python scripts/demo_server.py --example` path, when the prepared BEAT cache is absent, remains an offline algorithm fixture with author-created motion and illustrative vectors. It does not fit GestureCLR. The prepared-data commands below retain the full CLI contracts, including a real encoder and checkpoint. [Multilingual Gesture](https://github.com/ghazanPK/multilingual-gesture) later adds translation around English retrieval and refines the motion units; it is a research continuation, not a required dependency here.
 
@@ -106,38 +111,79 @@ Verify the complete local path with generated arrays:
 python scripts/verify.py
 ```
 
-The command generates every documented NPZ contract and a local 384-D SentenceTransformer fixture, then invokes the installed `train`, `cluster`, `mine`, and `retrieve` CLI paths into `outputs/verification/`. The local encoder replaces only the downloadable Sentence-BERT weights. Real runs swap that boundary for `all-MiniLM-L6-v2`; pose/motion shapes, checkpoints, clustering, and retrieval are identical.
+The command writes two procedural 11-joint motion takes, a held-out projected "wild" set with text, and a local 384-D SentenceTransformer fixture. It then runs the installed CLI into `outputs/verification/`: `extract-units`, a short `train`, `cluster`, `mine`, and `retrieve --audio-seconds --min-similarity`. The local encoder replaces only the downloadable Sentence-BERT weights. Real runs use `all-MiniLM-L6-v2` instead; pose/motion shapes, checkpoints, clustering, and retrieval are identical. The short training budget only checks the plumbing.
+
+**Sentence-BERT acquisition.** `mine` and `retrieve` take `--sbert NAME_OR_DIR` (default `all-MiniLM-L6-v2`). A hub name is downloaded once into the Hugging Face cache on first use. To work offline, save a local copy and pass its directory, optionally with `--sbert-local-only`, which never downloads:
+
+```bash
+python -c "from sentence_transformers import SentenceTransformer as S; S('all-MiniLM-L6-v2').save('models/all-MiniLM-L6-v2')"
+gestureclr mine ... --sbert models/all-MiniLM-L6-v2 --sbert-local-only
+```
 
 Users prepare all data. [Talking With Hands 16.2M](https://github.com/facebookresearch/TalkingWithHands32M) is the public training source cited by the paper; follow its access terms and derive synchronized 2–3 second paired units. For wild records, use videos you may process and produce timestamped text plus 2D pose; the [TED Gesture Dataset](https://github.com/youngwoo-yoon/Co-Speech_Gesture_Generation) is a practical public replacement. No dataset, videos, motion, weights, or claimed 2,035-unit/210k-rule artifact is included.
 
 ### Prepare data and launch the motion demo
 
-`scripts/prepare_public_data.py` accepts a licensed BVH and word-aligned JSONL transcript. Supply either one record with `words` or one word per line, using `word`, `start_seconds`, and `end_seconds`. It applies BVH hierarchy rotations, resamples to 15 FPS, centers on the neck, and creates paired 2D/3D units plus a projected `wild.npz` proxy. Use a recording of at least six seconds for two training pairs. The proxy demonstrates the interface; replace `wild.npz` with actual aligned video-estimated 2D poses and text for wild-pose mining. Retarget other BVH skeletons to the joint names in the script.
+`scripts/prepare_public_data.py` accepts a licensed BVH and word-aligned JSONL transcript. Supply either one record with `words` or one word per line, using `word`, `start_seconds`, and `end_seconds`. It applies BVH hierarchy rotations, resamples to 15 FPS and centers on the neck. It writes:
+- the full take as `motion.npz` (for `extract-units`);
+- fixed 3 s paired 2D/3D windows;
+- a projected `wild.npz` proxy.
+
+The proxy demonstrates the interface. For wild-pose mining, replace `wild.npz` with aligned video-estimated 2D poses and text from other speakers or takes. Retarget other BVH skeletons to the joint names in the script.
 
 ```bash
 python scripts/prepare_public_data.py --bvh data/licensed_motion.bvh --transcript data/words.jsonl --output-dir data/prepared
-gestureclr train --pairs data/prepared/pairs.npz --epochs 20 --output checkpoints/gestureclr.pt
-gestureclr cluster --units data/prepared/units.npz --checkpoint checkpoints/gestureclr.pt --clusters 10 --output outputs/clusters.npz
-gestureclr mine --wild data/prepared/wild.npz --units data/prepared/units.npz --checkpoint checkpoints/gestureclr.pt --clusters outputs/clusters.npz --output outputs/rules.jsonl
+gestureclr extract-units --motion data/prepared/motion.npz --output data/prepared/gesture_units.npz
+gestureclr extract-units --motion data/prepared/motion.npz --mode windows --stride 3 --output data/prepared/train_pairs.npz
+gestureclr train --pairs data/prepared/train_pairs.npz --preset demo --output checkpoints/gestureclr.pt
+gestureclr cluster --units data/prepared/gesture_units.npz --checkpoint checkpoints/gestureclr.pt --clusters 10 --output outputs/clusters.npz
+gestureclr mine --wild data/prepared/wild.npz --units data/prepared/gesture_units.npz --checkpoint checkpoints/gestureclr.pt --clusters outputs/clusters.npz --output outputs/rules.jsonl
 python scripts/prepare_viewer.py --out static/vendor
 python scripts/demo_server.py --data-dir data/prepared --rules outputs/rules.jsonl --clusters outputs/clusters.npz
 ```
 
-Open the printed local URL. Queries use six-word chunks, Sentence-BERT rule similarity and seeded sampling from the learned cluster. The trace shows the chosen cluster, score and actual unit frames. `gestureclr retrieve` remains available for batch results; `scripts/export_playback.py --sequence outputs/sequence.json --motion data/prepared/units.npz --output outputs/playback.json` joins those IDs to frames. The checkpoint is fitted only to the supplied pairs; a few demo epochs or projected proxy data do not establish useful wild-video accuracy. `scripts/verify.py` exercises plumbing with random arrays and a local text-encoder fixture, never a trained public model.
+Open the printed local URL. Queries use six-word chunks, Sentence-BERT rule similarity and seeded sampling from the learned cluster. The trace shows the chosen cluster, score and actual unit frames. `gestureclr retrieve` remains available for batch results; `scripts/export_playback.py --sequence outputs/sequence.json --motion data/prepared/units.npz --output outputs/playback.json` joins those IDs to frames. The checkpoint is fitted only to the supplied pairs. Same-take or projected proxy data does not establish wild-video accuracy; check `val_top1` in the training history. `scripts/verify.py` exercises the plumbing with procedural motion and a local text-encoder fixture, never a trained public model.
 
 The [automatic rule-mining precursor](https://github.com/ghazanPK/automatic-text-to-gesture) motivates harvesting mappings from video; [multilingual gesture retrieval](https://github.com/ghazanPK/multilingual-gesture) and [RIDGE](https://github.com/ghazanPK/ridge) develop the GestureCLR lineage. These are research references, not package dependencies.
 
-`pairs.npz`: `pose2d[N,F,D2]`, `motion3d[N,F,D3]`. `units.npz`: `motion3d`, string `ids`, and scalar `dim2`. `wild.npz`: `pose2d`, string `texts`. Keep the same upper-body joint order, 15 FPS, root/neck centering, coordinate scale, padding, and masks across files. The compact CLI assumes fixed-length padded batches; remove invalid frames before packaging.
+**Array contracts**
+
+| File | Keys |
+|---|---|
+| Motion | `motion[F,J,3]`, optional scalar `take` |
+| `pairs.npz` | `pose2d[N,F,D2]`, `motion3d[N,F,D3]`, optional `mask[N,F]` |
+| `units.npz` | `motion3d`, string `ids`, scalar `dim2`, optional `mask`, `lengths` |
+| `wild.npz` | `pose2d`, string `texts`, optional `mask` |
+
+`extract-units` writes all of the `pairs.npz` and `units.npz` keys in one file, plus `takes`, `starts` and `ends`. Unit IDs take the form `<take>:<start>-<end>`. Units are padded at the end to 45 frames, and the masks keep the padding out of attention, pooling, clustering and mining. Keep the same upper-body joint order, 15 FPS and neck centering across files.
 
 ```bash
-gestureclr train --pairs data/pairs.npz --output checkpoints/gestureclr.pt
+gestureclr extract-units --manifest data/takes.txt --output data/units.npz           # Algorithm 3 over many takes
+gestureclr train --pairs data/pairs.npz --preset paper --output checkpoints/gestureclr.pt
 gestureclr cluster --units data/units.npz --checkpoint checkpoints/gestureclr.pt --clusters 100 --output outputs/clusters.npz
 gestureclr mine --wild data/wild.npz --units data/units.npz --checkpoint checkpoints/gestureclr.pt --clusters outputs/clusters.npz --output outputs/rules.jsonl
-gestureclr retrieve --rules outputs/rules.jsonl --clusters outputs/clusters.npz --text "A sentence to animate in several chunks" --output outputs/sequence.json
+gestureclr retrieve --rules outputs/rules.jsonl --clusters outputs/clusters.npz --text "A sentence to animate in several chunks" \
+  --audio-seconds 4.2 --min-similarity 0.3 --idle-id idle --output outputs/sequence.json
+gestureclr presets
 python -m pytest
 ```
 
-Training uses Gaussian noise levels sampled from `.001/.01/.1`, temporal displacement up to 15 frames, a three-layer Transformer pair, normalized 10D latents, symmetric NT-Xent, AdamW, and the paper learning rate/weight decay. Clustering uses Bisecting K-Means and retrieval randomly samples within the semantically matched cluster.
+**Gesture units (Algorithm 3).**
+- **Rules.** A unit lasts 2–3 s (30–45 frames at 15 FPS). Among all candidates in the still-unused motion, the one whose start and end poses are closest is taken first, provided its variance passes the threshold. It is then removed, and the search repeats until no candidate remains.
+- **Normalisation.** Distances and variances use neck-centred poses scaled by shoulder width. The defaults are `--neck-joint 1 --scale-joints 4,8`.
+- **Variance threshold.** The paper leaves this to the expert. Set it with `--variance-threshold`, `--variance-percentile` (default 25) or `--variance-elbow`. The chosen value, window-variance percentiles, unit count, coverage and length histogram go to `<output>.report.json`.
+- **Training sequences.** `--mode windows` writes overlapping 2–3 s sequences instead, for training pairs.
+
+**Training.**
+- **Normalisation.** `train` normalises both modalities the same way: neck-centred and divided by shoulder width. The settings are stored in the checkpoint, so `cluster` and `mine` apply the same normalisation.
+- **Augmentation.** Each 2D view gets Gaussian noise with variance drawn from `0.001/0.01/0.1` (standard deviation √variance, in shoulder widths). With probability `--shift-prob` (default 0.5) it also gets the paper's temporal shift: a random 30-frame segment is placed at offset 1–15 of a 45-frame buffer filled with the mean pose or with zeros.
+- **Model and optimiser.** A three-layer, five-head Transformer encodes each modality into normalised 10-D latents. Training uses symmetric NT-Xent with AdamW (lr 5e-4, weight decay 1e-4) and per-step cosine annealing.
+- **Validation and checkpoints.** A validation split (`--val-fraction`) is held out. The best validation-loss checkpoint is kept, with per-epoch loss, learning rate and validation top-1 in `<output>.history.json`.
+- **Presets.** `--preset paper` runs 1000 epochs at batch 512. `--preset demo`, the default, runs 300 epochs at batch 64. `--epochs`, `--max-steps`, `--batch-size`, `--lr`, `--weight-decay`, `--temperature`, `--latent-dim`, `--noise-variances`, `--shift-prob` and `--fills` override either preset, as does a JSON `--config`.
+
+**Clustering and retrieval.** Clustering uses scikit-learn Bisecting K-Means, which splits the largest cluster, so cluster sizes are not balanced. `mine --min-pose-match` optionally drops weak pose matches. Retrieval samples randomly within the semantically matched cluster.
+- **Timing.** `--audio-seconds` gives each six-word chunk a slot proportional to its word count. Each slot reports `start_seconds`, `duration_seconds`, the sampled unit's natural `unit_seconds` and the resulting `playback_rate`.
+- **Idle.** Below `--min-similarity`, a chunk plays `--idle-id` instead, as the thesis suggests. `scripts/export_playback.py` leaves idle slots out and trims padded units to their length.
 
 ### Limits and licensing
 

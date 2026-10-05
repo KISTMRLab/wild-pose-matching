@@ -1,4 +1,4 @@
-"""Train GestureCLR briefly and exercise clustering, mining, and retrieval."""
+"""Exercise the full CLI route on procedural motion: extract-units -> train -> cluster -> mine -> retrieve."""
 from __future__ import annotations
 
 import argparse
@@ -12,80 +12,71 @@ import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.sentence_transformer.modules import BoW, Dense, Normalize
 
-from wild_pose_matching.model import GestureCLR, ntxent
-from wild_pose_matching.pipeline import build_rules, cluster_latents, retrieve, write_jsonl
+# 11-joint upper body in centimetres (Hips, Neck, Head, L/R Shoulder, Arm, ForeArm, Hand), neck at index 1.
+BASE = np.array([[0, -50, 0], [0, 0, 0], [0, 15, 0], [-5, -2, 0], [-18, -3, 0], [-30, -25, 5], [-32, -48, 10],
+                 [5, -2, 0], [18, -3, 0], [30, -25, 5], [32, -48, 10]], np.float32)
+KINDS = {"raise_left": ([5, 6], 1, 30), "raise_right": ([9, 10], 1, 30), "spread": ([6, 10], 0, 15), "push": ([6, 10], 2, 25)}
+
+
+def make_take(rng: np.random.Generator, events: int = 12) -> tuple[np.ndarray, list[str]]:
+    clips, kinds = [], []
+    for _ in range(events):
+        clips.append(np.repeat(BASE[None], int(rng.integers(15, 25)), 0))
+        kind = str(rng.choice(list(KINDS))); joints, axis, amp = KINDS[kind]; n = int(rng.integers(32, 44))
+        clip = np.repeat(BASE[None], n, 0).copy()
+        clip[:, joints, axis] += amp * ((1 - np.cos(np.linspace(0, 2 * np.pi, n))) / 2)[:, None]
+        clips.append(clip); kinds.append(kind)
+    motion = np.concatenate(clips)
+    return motion + rng.normal(0, .3, motion.shape).astype(np.float32), kinds
 
 
 def make_text_encoder(path: Path, texts: list[str]) -> None:
+    """Local 384-D SentenceTransformer fixture standing in for the downloadable Sentence-BERT weights."""
     torch.manual_seed(7)
     vocab = sorted({token for text in texts for token in text.lower().split()})
     SentenceTransformer(modules=[BoW(vocab), Dense(len(vocab), 384), Normalize()]).save_pretrained(str(path))
 
 
-def run_cli(*args: object) -> None:
-    subprocess.run([sys.executable, "-m", "wild_pose_matching.cli", *map(str, args)], check=True)
-
-
-def text_embedding(texts: list[str], width: int = 384) -> np.ndarray:
-    """Deterministic offline stand-in at the documented Sentence-BERT boundary."""
-    rows = []
-    for text in texts:
-        row = np.zeros(width, np.float32)
-        for token in text.lower().split():
-            row[sum(token.encode("utf-8")) % width] += 1
-        row /= max(np.linalg.norm(row), 1e-8)
-        rows.append(row)
-    return np.stack(rows)
+def run_cli(*args: object) -> str:
+    return subprocess.run([sys.executable, "-m", "wild_pose_matching.cli", *map(str, args)], check=True, capture_output=True, text=True).stdout
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/verification"))
+    parser.add_argument("--max-steps", type=int, default=40, help="training budget for this plumbing check")
     args = parser.parse_args()
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    torch.manual_seed(7)
     rng = np.random.default_rng(7)
 
-    pose2d = rng.normal(size=(6, 45, 8)).astype("float32")
-    motion3d = np.concatenate((pose2d, pose2d[..., :4] * 0.5), axis=-1)
-    np.savez(out / "pairs.npz", pose2d=pose2d, motion3d=motion3d)
-    model = GestureCLR(8, 12)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    model.train()
-    z2, z3 = model(torch.from_numpy(pose2d), torch.from_numpy(motion3d))
-    loss = ntxent(z2, z3)
-    optimizer.zero_grad(); loss.backward(); optimizer.step()
-    torch.save(model.state_dict(), out / "gestureclr.pt")
+    for take in ("take_a", "take_b"):
+        motion, _ = make_take(rng)
+        np.savez(out / f"{take}.npz", motion=motion, take=np.asarray(take))
+    # Held-out "wild" take: projected, noisy 3 s windows with text.
+    wild_motion, kinds = make_take(rng, 8)
+    words = {"raise_left": "raise your left hand high", "raise_right": "lift the right side up", "spread": "open wide to everyone", "push": "push it away from us"}
+    windows = [wild_motion[s:s + 45, :, :2].reshape(45, -1) + rng.normal(0, .5, (45, 22)) for s in range(0, len(wild_motion) - 44, 45)]
+    texts = [words[kinds[i % len(kinds)]] for i in range(len(windows))]
+    np.savez(out / "wild.npz", pose2d=np.stack(windows).astype(np.float32), texts=np.asarray(texts))
 
-    model = GestureCLR(8, 12)
-    model.load_state_dict(torch.load(out / "gestureclr.pt", map_location="cpu", weights_only=True))
-    model.eval()
-    with torch.no_grad():
-        unit_latents = model.motion3d(torch.from_numpy(motion3d)).numpy()
-        wild_latents = model.pose2d(torch.from_numpy(pose2d[:3])).numpy()
-    ids = [f"unit_{i}" for i in range(len(motion3d))]
-    labels, centers = cluster_latents(unit_latents, n_clusters=3, seed=7)
-    np.savez(out / "clusters.npz", ids=np.asarray(ids), labels=labels, centroids=centers)
-    texts = ["open both hands", "point to the chart", "explain the next idea"]
-    embeddings = text_embedding(texts)
-    rules = build_rules(embeddings, texts, wild_latents, unit_latents, ids, labels)
-    write_jsonl(out / "rules.jsonl", rules)
-    clusters = {int(k): [ids[i] for i in np.flatnonzero(labels == k)] for k in np.unique(labels)}
-    sequence = retrieve("open both hands and explain the next idea", rules, text_embedding, clusters, seed=7)
-    (out / "sequence.json").write_text(json.dumps(sequence, indent=2), encoding="utf-8")
-
-    # Verify the installed CLI against the same public-data contracts.
-    np.savez(out / "units.npz", motion3d=motion3d, ids=np.asarray(ids), dim2=np.asarray(8))
-    np.savez(out / "wild.npz", pose2d=pose2d[:3], texts=np.asarray(texts))
-    make_text_encoder(out / "tiny-sbert", texts + ["open both hands and explain the next idea"])
-    run_cli("train", "--pairs", out / "pairs.npz", "--output", out / "cli-gestureclr.pt", "--epochs", 1, "--batch-size", 6, "--seed", 7)
-    run_cli("cluster", "--units", out / "units.npz", "--checkpoint", out / "cli-gestureclr.pt", "--clusters", 3, "--output", out / "cli-clusters.npz")
-    run_cli("mine", "--wild", out / "wild.npz", "--units", out / "units.npz", "--checkpoint", out / "cli-gestureclr.pt", "--clusters", out / "cli-clusters.npz", "--sbert", out / "tiny-sbert", "--output", out / "cli-rules.jsonl")
-    run_cli("retrieve", "--rules", out / "cli-rules.jsonl", "--clusters", out / "cli-clusters.npz", "--sbert", out / "tiny-sbert", "--text", "open both hands and explain the next idea", "--seed", 7, "--output", out / "cli-sequence.json")
-    cli_sequence = json.loads((out / "cli-sequence.json").read_text(encoding="utf-8"))
-    if not cli_sequence: raise RuntimeError("installed CLI produced no gestures")
-    print(json.dumps({"loss": float(loss.detach()), "rules": len(rules), "gestures": len(sequence), "output": str(out)}))
+    report = json.loads(run_cli("extract-units", "--motion", out / "take_a.npz", out / "take_b.npz", "--variance-percentile", "40", "--output", out / "units.npz"))
+    train = json.loads(run_cli("train", "--pairs", out / "units.npz", "--output", out / "gestureclr.pt", "--max-steps", args.max_steps, "--batch-size", 8, "--seed", 7))
+    run_cli("cluster", "--units", out / "units.npz", "--checkpoint", out / "gestureclr.pt", "--clusters", 4, "--output", out / "clusters.npz")
+    query = "raise your left hand high and then push it away from us"
+    make_text_encoder(out / "tiny-sbert", texts + [query])
+    mined = json.loads(run_cli("mine", "--wild", out / "wild.npz", "--units", out / "units.npz", "--checkpoint", out / "gestureclr.pt",
+                               "--clusters", out / "clusters.npz", "--sbert", out / "tiny-sbert", "--output", out / "rules.jsonl"))
+    run_cli("retrieve", "--rules", out / "rules.jsonl", "--clusters", out / "clusters.npz", "--sbert", out / "tiny-sbert", "--text", query,
+            "--audio-seconds", 4.0, "--min-similarity", 0.2, "--seed", 7, "--output", out / "sequence.json")
+    sequence = json.loads((out / "sequence.json").read_text(encoding="utf-8"))
+    units = np.load(out / "units.npz")
+    if not report["units"] or not mined["rules"] or not sequence:
+        raise RuntimeError("CLI route produced empty output")
+    if not all(30 <= n <= 45 for n in units["lengths"]) or abs(sum(s["duration_seconds"] for s in sequence) - 4.0) > 1e-6:
+        raise RuntimeError("unit lengths or slot timing violate the contract")
+    print(json.dumps({"units": report["units"], "variance_threshold": report["variance_threshold"], "train": train,
+                      "rules": mined["rules"], "slots": [[s["text"], s["gesture_id"], round(s["duration_seconds"], 2)] for s in sequence], "output": str(out)}))
 
 
 if __name__ == "__main__":
