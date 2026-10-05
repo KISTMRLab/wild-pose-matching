@@ -95,6 +95,61 @@ python scripts/prepare_viewer.py --out static/vendor
 python scripts/demo_server.py --example
 ```
 
+### Reproduce with BEAT
+
+`scripts/prepare_paper_method.py` runs this repository's full pipeline on public [BEAT](https://pantomatrix.github.io/BEAT/) motion, then serves the result in the browser viewer. Disjoint speakers take the paper's three roles:
+
+| Role | Default speakers | Used for |
+|---|---|---|
+| `library` | 2 | Continuous 3D motion → Algorithm 3 units (`gestureclr extract-units`), clustered with Bisecting K-Means (`gestureclr cluster`) |
+| `train` | 2 | 3 s windows: clean 3D plus a 2D projection at a random yaw within ±30° → GestureCLR (`gestureclr train`) |
+| `wild` | 2 | Held-out 3 s windows with their transcripts → rules (`gestureclr mine`). The windows are projected through a camera at yaw 20° and pitch 5°, then corrupted like OpenPose tracks: noise, ±1-frame jitter and 5% joint dropout. |
+
+Roles are assigned per speaker with a fixed `--seed`. `--role library=1,2 --role train=0.5 --role wild=rest` overrides them.
+
+**1. Sentence-BERT, once.** The hook never downloads a model. Save `all-MiniLM-L6-v2` locally (about 90 MB):
+
+```bash
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2').save('models/all-MiniLM-L6-v2')"
+```
+
+`--sbert DIR` or the `SBERT_MODEL` environment variable selects another local copy.
+
+**2a. Processed OmniMo collection.** The collection is laid out as `<root>/<speaker>/{meta.json,motion.npz}`:
+
+```bash
+python scripts/prepare_paper_method.py --processed /path/to/processed/beat
+python scripts/demo_server.py --prepared outputs/paper-method/<key> --port 8080
+```
+
+The last line of standard output is JSON whose `server_args` give the exact prepared folder.
+
+**2b. Raw BEAT from Hugging Face.** Download BVH and TextGrid pairs from the official dataset [`H-Liu1997/BEAT`](https://huggingface.co/datasets/H-Liu1997/BEAT) into `data/beat/beat_english_v0.2.1/<speaker>/`. Each BVH is about 20 MB:
+
+```bash
+base=https://huggingface.co/datasets/H-Liu1997/BEAT/resolve/main/beat_english_v0.2.1/beat_english_v0.2.1
+for take in 1_wayne_0_1_1 1_wayne_0_2_2 2_scott_0_1_1 2_scott_0_2_2 3_solomon_0_3_3 3_solomon_0_4_4 \
+            4_lawrence_0_2_2 4_lawrence_0_3_3 5_stewart_0_1_1 5_stewart_0_2_2 6_carla_0_2_2 6_carla_0_3_3; do
+  spk=${take%%_*}; mkdir -p data/beat/beat_english_v0.2.1/$spk
+  for ext in bvh TextGrid; do curl -fL -o data/beat/beat_english_v0.2.1/$spk/$take.$ext $base/$spk/$take.$ext; done
+done
+python scripts/prepare_paper_method.py --beat-root data/beat/beat_english_v0.2.1
+```
+
+**Launcher.** `python scripts/start_demo.py` runs this hook after the shared BEAT demo preparation.
+- **Source.** It looks in `--processed` or `--beat-root`, then `BEAT_PROCESSED_ROOT` or `BEAT_RAW_ROOT`, then `data/beat/processed` or `data/beat/beat_english_v0.2.1`.
+- **Missing input.** Without a source or Sentence-BERT, it prints the next step and the default demo starts unchanged.
+- **Cache.** Results are cached in ignored `outputs/paper-method/<settings hash>/`. A repeat launch with the same settings returns at once; `--force` rebuilds.
+
+**Demo scale and paper preset.**
+- **Demo (default).** Speakers 1–6, two takes each, `--preset demo`: 300 epochs at batch 64, and about one cluster per four units. On a CPU it takes about two minutes. One local run on the processed collection gave 93 units, 80 training pairs, 88 rules over 23 clusters, and a held-out cross-view top-1 of 0.25 against a chance of 0.011 (88 windows).
+- **Paper preset.** `--speakers all --max-takes-per-speaker 0 --preset paper` trains 1000 epochs at batch 512 with 100 clusters.
+- **Tuning.** `--epochs`, `--max-steps`, `--clusters` and `--variance-percentile` adjust either.
+
+**Viewer.** `/api/beat-library` lists the library units and the stored metrics. Its suggested queries include rule phrases and held-out probes; the probes are library-speaker transcripts that never became rules. `/api/beat-query` returns, for each six-word chunk, the unit frames, cluster, route and score. The route is `learned_pose_rule`, or `idle_no_match` below the 0.2 similarity floor (`min_similarity`).
+
+**Limits.** Projected BEAT motion stands in for wild video and OpenPose output; it is not the paper's data. The held-out metric checks whether a corrupted 2D window finds its own 3D window among the held-out windows; it is not a paper benchmark. A demo-scale rule map covers only a few thousand transcript words.
+
 ### Install and data
 
 ```bash
