@@ -40,7 +40,7 @@ Poster demonstrates the expanded gesture library and mapping pipeline
 
 ## Explore the implementation
 
-Trainable GestureCLR with noise/shift augmentation, clustered motion units, rule mining and semantic text retrieval. The public-data contract replaces the private unit library.
+Algorithm 3 gesture-unit extraction, trainable GestureCLR with the paper's noise/shift augmentation, Bisecting K-Means unit clusters, rule mining and six-gram semantic retrieval, with a BEAT route that keeps library, training and wild speakers disjoint. Public motion replaces the private unit library.
 
 This repository contains independently written research code. The institute's original source, datasets and trained models are not distributed. Public-data preparation, commands, assumptions and checks are documented below and in [REQUIREMENTS.md](REQUIREMENTS.md).
 
@@ -67,10 +67,11 @@ python -m pip install -r scripts/requirements-demo.txt
 python scripts/start_demo.py
 ```
 
-Open **http://127.0.0.1:8080/**. On first launch, the script downloads one official BEAT BVH and matching TextGrid, prepares nine distinct clips and disjoint paired association windows in ignored `outputs/`, then fits the small dual-Transformer pose matcher and four motion clusters locally. The browser uses a TF-IDF text surrogate for this small demo; the full CLI below documents Sentence-BERT. Choose a suggested utterance to inspect selected IDs, matched text, route and confidence, then click **Play speech + gesture**. Stop cancels speech, and scrubbing previews a pose. The first launch also downloads pinned Three.js modules. Public recordings and fitted weights remain local.
+Open **http://127.0.0.1:8080/**. On first launch, the script downloads one official BEAT BVH and matching TextGrid, prepares nine distinct clips and disjoint paired association windows in ignored `outputs/`, extracts Algorithm 3 gesture units, trains GestureCLR with the paper's augmentation for a short demo step budget, and clusters the unit latents locally. Text matching uses Sentence-BERT when `BEAT_SBERT_MODEL` names a local model folder and a TF-IDF fallback otherwise; each response names its text encoder, and text without a match plays an explicit idle slot. Choose a suggested utterance to inspect selected IDs, matched text, route and confidence, then click **Play speech + gesture**. Stop cancels speech, and scrubbing previews a pose. The first launch also downloads pinned Three.js modules. Public recordings and fitted weights remain local.
 
 The 3D presentation uses shared Three.js avatar components and bundled fictional CC0 characters. The paper-specific algorithms and data adapters live in this repository.
 
+**Paper method on BEAT.** When a BEAT source is configured (`BEAT_PROCESSED_ROOT` for a processed collection, `BEAT_RAW_ROOT` for raw `beat_english_v0.2.1` BVH/TextGrid, or a copy under `data/beat/`) and a local Sentence-BERT folder exists (`SBERT_MODEL`, or `models/all-MiniLM-L6-v2`), `scripts/start_demo.py` first runs `scripts/prepare_paper_method.py`, which trains or mines with this repository's own pipeline on disjoint BEAT speakers and caches the result under ignored `outputs/paper-method/`. The same viewer then serves that prepared method with its library and suggested queries. Without the data the launcher serves the small demo adapter above; `--skip-paper-method` forces it. See [Reproduce with BEAT](#reproduce-with-beat).
 
 To replace the demo motion with an existing processed BEAT take, run `python scripts/prepare_beat_demo.py --processed /path/to/processed/beat`, then restart the server. Use `--rebuild --epochs 80` to regenerate the public sample and refit the small adapter. For a larger bank, the documented full-data CLI below retains the paper-specific input contracts.
 
