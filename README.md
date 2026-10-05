@@ -57,18 +57,22 @@ Please cite the research paper when using its ideas; [download the BibTeX citati
 
 ![Wild Pose Matching runnable demo](demo-assets/preview.png)
 
-*Local demo with small starter examples; the capture illustrates the interface, not a reproduced paper benchmark.*
+*The prepared BEAT sequence shows locally fitted pose matching and retrieval. This preview is not a paper benchmark.*
 
 From the repository root, using the Python environment described below:
 
 ```sh
 python -m pip install -e .
+python -m pip install -r scripts/requirements-demo.txt
 python scripts/start_demo.py
 ```
 
-Open **http://127.0.0.1:8080/**. A starter query and motion clip load automatically. Click **Play speech + gesture** to start both together, or change the text and click **Retrieve motion**. Stop cancels speech; scrubbing previews a pose without speaking. The launcher selects the bundled inputs automatically; it also builds the small authored index for RAG demos. Avatar demos prepare their pinned Three.js modules on first launch, so that step needs internet access. Model weights and public datasets are optional for the starter workflow and are prepared separately for real-data use.
+Open **http://127.0.0.1:8080/**. On first launch, the script downloads one official BEAT BVH and matching TextGrid, prepares nine distinct clips and disjoint paired association windows in ignored `outputs/`, then fits the small dual-Transformer pose matcher and four motion clusters locally. The browser uses a TF-IDF text surrogate for this small demo; the full CLI below documents Sentence-BERT. Choose a suggested utterance to inspect selected IDs, matched text, route and confidence, then click **Play speech + gesture**. Stop cancels speech, and scrubbing previews a pose. The first launch also downloads pinned Three.js modules. Public recordings and fitted weights remain local.
 
 The 3D presentation uses shared Three.js avatar components and bundled fictional CC0 characters. The paper-specific algorithms and data adapters live in this repository.
+
+
+To replace the demo motion with an existing processed BEAT take, run `python scripts/prepare_beat_demo.py --processed /path/to/processed/beat`, then restart the server. Use `--rebuild --epochs 80` to regenerate the public sample and refit the small adapter. For a larger bank, the documented full-data CLI below retains the paper-specific input contracts.
 
 <!-- demo-preview:end -->
 
@@ -78,7 +82,7 @@ The 3D presentation uses shared Three.js avatar components and bundled fictional
 
 Clean-room educational implementation of *Improving Co-speech gesture rule-map generation via wild pose matching with gesture units* (Ali and Hwang, SIGGRAPH Asia Posters 2022, DOI: [10.1145/3550082.3564185](https://doi.org/10.1145/3550082.3564185)). It implements the poster's learned noisy-2D/clean-3D matching, balanced gesture clustering, rule mining, and six-gram retrieval. It is independent of the institute implementation.
 
-For an immediate browser example after installation, run `python scripts/prepare_viewer.py --out static/vendor` and `python scripts/demo_server.py --example`, then open the printed URL. Author-created motion and transparent illustrative pose/text vectors exercise the actual cluster and retrieval functions. The UI labels them as examples; no GestureCLR model is claimed to have been trained. The prepared-data commands below use an actual trained checkpoint.
+The default browser path is the prepared BEAT demo above. The older `python scripts/demo_server.py --example` path, when the prepared BEAT cache is absent, remains an offline algorithm fixture with author-created motion and illustrative vectors. It does not fit GestureCLR. The prepared-data commands below retain the full CLI contracts, including a real encoder and checkpoint. [Multilingual Gesture](https://github.com/ghazanPK/multilingual-gesture) later adds translation around English retrieval and refines the motion units; it is a research continuation, not a required dependency here.
 
 ```bash
 python -m pip install -e .

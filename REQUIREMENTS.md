@@ -12,7 +12,7 @@
 - Both modalities use independent input projections and Transformer encoders, then masked temporal mean pooling and L2-normalized 10D output.
 - Symmetric cross-entropy over the 2D-by-3D similarity matrix implements NT-Xent.
 - All arrays use padded `[N,F,D]` tensors plus optional `[N,F]` masks. IDs and timed text use JSONL. The original counts are documentary facts, not shipped assets or promised outputs.
-- Skeleton projection and cleanup stay outside this repository; the README defines the required common joint order.
+- The full CLI accepts prepared arrays in the documented common joint order. The small browser demo additionally converts one public BVH/TextGrid take into local paired windows.
 
 ## Acceptance criteria
 
@@ -21,7 +21,7 @@ Training must update a genuine contrastive model; mining must assign wild record
 
 ## Interactive data handoff
 
-The browser queries the existing retrieval implementation and renders the selected motion frames with a pinned local Three.js module. Its immediate example mode is author-created motion plus explicitly illustrative, untrained vectors. Production mode accepts the documented public BVH/timed-transcript preparation outputs, real local encoder assets and trained checkpoints as appropriate. The preparation adapter preserves motion/transcript alignment and declares skeleton/FPS assumptions; it does not fabricate annotations or evaluation results. Speech is optional and replaceable (Kokoro-82M English/faster-whisper small CPU INT8, with browser voice/typed-input alternatives). Verification must cover clip serialization and algorithm routing, with model quality evaluation deferred to user-prepared public data.
+`scripts/start_demo.py` downloads one official BEAT BVH and aligned TextGrid, builds an ignored nine-clip bank with separate paired windows, and locally fits a compact dual-Transformer matcher and four clusters. The browser uses a TF-IDF text surrogate, while the full CLI above uses Sentence-BERT. Its trace shows chosen clips and retrieval route. This small same-speaker simulation is not evidence of general wild-pose matching quality or paper-scale coverage. The older `--example` server path remains an explicitly authored offline fixture. Speech is optional; public recordings and fitted weights are not bundled.
 
 ## Bundled fictional avatar substitution
 
