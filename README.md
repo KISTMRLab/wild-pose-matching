@@ -243,7 +243,7 @@ python -m pytest
 
 ### Limits and licensing
 
-This package begins with prepared pose arrays and does not perform face tracking, transcription, OpenPose inference, BVH conversion, retargeting, rendering, or temporal blending. Results depend heavily on projection and skeleton consistency. The two-page poster leaves architectural details underspecified; details documented in `REQUIREMENTS.md` are drawn from the later expanded methodology or declared implementation choices. Code is MIT licensed; datasets, Sentence-BERT weights, and source motion retain their own licenses.
+This package begins with prepared pose arrays and does not perform face tracking, transcription, OpenPose inference, BVH conversion, retargeting, rendering, or temporal blending. Results depend heavily on projection and skeleton consistency. The two-page poster leaves architectural details underspecified; details documented in `REQUIREMENTS.md` are drawn from the later expanded methodology or declared implementation choices. Code is MIT licensed ([LICENSE](LICENSE)); datasets, Sentence-BERT weights, and source motion retain their own licenses.
 
 ### Citation
 
